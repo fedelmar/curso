@@ -2040,6 +2040,86 @@ const resolvers = {
             return resultado;
         },
 
+        nuevoDobleRegistroCPG: async (_ , { id, input}) => {
+            const { 
+                lote,
+                loteBolsaID,
+                cantProducida,
+                cantDescarte,
+                operario,
+                productoID,
+                loteBolsaCristal,
+                cantDescarteBolsaCristal, 
+            } = input;
+            
+            console.log('Input: ', input);
+
+            // Obtener informacion en Insumos y Productos en Stock
+            let bolsaStock = await StockInsumo.findById(loteBolsaID);
+            console.log('Stock bolsas: ', bolsaStock);
+            let bolsaCristalStock = await StockInsumo.findOne({ lote: loteBolsaCristal});
+            console.log('Stock cristal bolsas: ', bolsaCristalStock);
+            let loteStock = await StockProducto.findOne({lote: lote, producto: productoID});
+            console.log('Lote en Stock: ', loteStock);
+            try {
+                if (id) {
+                    console.log('Entra con id');
+                    if (!loteBolsaCristal) {
+                        console.log('No existe bolsa cristal');
+                        // Actualizar o crear nuevo lote de producto en el Stock
+                        if (loteStock){
+                           throw new Error('Ya existe ese lote en el stock');
+                        } else {
+                            // Actualizar la cantidad de Insumo de Bolsa simple
+                            bolsaStock.cantidad -= cantDescarte;
+                            await StockInsumo.findByIdAndUpdate({_id: loteBolsaID}, bolsaStock, { new: true });
+
+                            const nuevoLote = {
+                                lote: lote,
+                                estado: "Proceso",
+                                cantidad: 0,
+                                producto: productoID,
+                                responsable: operario,
+                                modificado: Date.now()                        
+                            }
+                            const loteTermiado = new StockProducto(nuevoLote);
+                            console.log('Se creo el lote: ', loteTermiado);
+                            await loteTermiado.save();
+                        }
+                    } else {
+                        // Actualizar la cantidad de Insumo de Bolsa simple
+                        bolsaStock.cantidad -= cantProducida;
+                        await StockInsumo.findByIdAndUpdate({_id: loteBolsaID}, bolsaStock, { new: true });
+
+                        // Actualizar la cantidad de Insumo de Bolsa cristal
+                        bolsaCristalStock.cantidad -= cantProducida + cantDescarteBolsaCristal;
+                        await StockInsumos.findByIdAndUpdate({_id: bolsaCristalStock.id }, bolsaCristalStock, { new: true });
+
+                        // Actualizar el stock de producto a estado terminado
+                        loteStock.estado = 'Terminado';
+                        loteStock.cantidad += cantProducida - cantDescarte;
+                        await StockProducto.findByIdAndUpdate({_id: loteStock.id}, loteStock, { new: true });                        
+                    }
+
+                    // Actualizar los datos del registro y finalizarlo
+                    input.modificado = Date.now();
+                    input.estado = false;
+                    resultado = await CPG.findByIdAndUpdate( {_id: id}, input, { new: true })
+
+
+                } else {
+                    // Abrir un nuevo rejistro activo
+                    console.log('Crea un nuevo registro: ');
+                    input.creado = Date.now();
+                    const registro = new CPG(input);
+                    console.log(registro);
+                    resultado = await registro.save();
+                }
+            } catch (error) {
+                console.log(error)
+            }
+            return resultado;
+        },
 
         actualizarRegistroCPG: async (_, { id, input }) => {
             // Buscar existencia de planilla por ID
